@@ -31,4 +31,8 @@
 *.swo
 *.swp
 
-build/*
+build/
+build_debug/
+.vscode/
+data/
+*.egg-info/
