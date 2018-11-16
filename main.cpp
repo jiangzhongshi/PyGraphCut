@@ -19,6 +19,7 @@
 #include <igl/matrix_to_list.h>
 #include <igl/per_face_normals.h>
 #include <igl/PI.h>
+#include <algorithm>
 
 
 #include <pybind11/pybind11.h>
@@ -77,11 +78,6 @@ bool sdf_segmentation(const Eigen::MatrixXd&V, const Eigen::MatrixXi &F, Eigen::
   return true;
 }
 
-  /**
-   * Receives probability-matrix with probabilities between [0-1], and returns log-normalized probabilities
-   * which are suitable to use in graph-cut.
-   * @param[in, out] probabilities probability matrix in [center][facet] order
-   */
   void log_normalize_probability_matrix(std::vector<std::vector<double> >&
                                         probabilities) {
     const double epsilon = 5e-6;
@@ -111,7 +107,9 @@ bool sdf_segmentation(const Eigen::MatrixXd&V, const Eigen::MatrixXi &F, Eigen::
         igl::per_face_normals(V,F,FN);
 
         auto angle_between = [](const Eigen::MatrixXd& FN, int i, int o){
-          return 1 - acos(FN.row(i).dot(FN.row(o)))/igl::PI;
+          double inner = std::min(std::max(FN.row(i).dot(FN.row(o)),-1+1e-9), 1-1e-9);
+          double angle = acos(inner)/igl::PI;
+          return 1 - abs(angle);
         };
         a_edges.clear();
         for (int i=0; i<TT.rows(); i++) {
@@ -141,6 +139,20 @@ int graphcut_from_cgal(
     log_normalize_probability_matrix(probability_matrix);
     calculate_and_log_normalize_dihedral_angles(V,F, smoothing_lambda, edges,
         edge_weights);  
+
+    for(auto v: edge_weights){
+      if (!std::isfinite(v)) {
+        std::cout<<"Some NaN"<<std::endl;
+        return 0;
+      }
+    }
+        for(auto p: probability_matrix){
+          for(auto v: p)
+      if (!std::isfinite(v)) {
+        std::cout<<"Some NaN"<<std::endl;
+        return 0;
+      }
+    }
     CGAL::internal::Alpha_expansion_graph_cut_boykov_kolmogorov()(edges, edge_weights, probability_matrix, labels);
   }
 
