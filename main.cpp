@@ -4,6 +4,7 @@
 #include <map>
 #include <string>
 #define CGAL_SEGMENTATION_BENCH_GRAPHCUT
+#include <CGAL/boost/graph/properties_Polyhedron_3.h>
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
 #include <CGAL/Polyhedron_3.h>
 #include <CGAL/mesh_segmentation.h>
@@ -76,6 +77,56 @@ bool sdf_segmentation(const Eigen::MatrixXd&V, const Eigen::MatrixXi &F, Eigen::
     C(i) = seg_ids[i];
   }
   return true;
+}
+
+  // template<class SDFPropertyMap>
+  // void log_normalize_sdf_values(SDFPropertyMap sdf_values,
+  //                               std::vector<double>& normalized_sdf_values) {
+  //   normalized_sdf_values.reserve(num_faces(mesh));
+  //   face_iterator facet_it, fend;
+  //   for(boost::tie(facet_it,fend) = faces(mesh);
+  //       facet_it != fend; ++facet_it) {
+  //     double log_normalized = log(get(sdf_values, *facet_it) * CGAL_NORMALIZATION_ALPHA +
+  //                                 1) / log(CGAL_NORMALIZATION_ALPHA + 1);
+  //     normalized_sdf_values.push_back(log_normalized);
+  //   }
+  // }
+
+typedef typename boost::graph_traits<Polyhedron>::face_iterator  face_iterator;
+std::vector<double> sdf_computation(const Eigen::MatrixXd&V, const Eigen::MatrixXi &F)
+{
+  Eigen::MatrixXi BI;
+  if (!igl::is_edge_manifold(F)||!igl::is_vertex_manifold(F, BI)) 
+  {
+    std::cout<<"Not Manifold"<<std::endl;
+    return std::vector<double>();
+  }
+
+  Polyhedron mesh;
+  if (!igl::copyleft::cgal::mesh_to_polyhedron(V,F,mesh)) 
+  {
+    std::cerr << "Convert Failure." << std::endl;
+    return std::vector<double>();
+  }
+
+  typedef std::map<Polyhedron::Facet_const_handle, double> Facet_double_map;
+  Facet_double_map internal_sdf_map;
+  boost::associative_property_map<Facet_double_map> sdf_property_map(internal_sdf_map);
+  // compute SDF values using default parameters for number of rays, and cone angle
+  CGAL::sdf_values(mesh, sdf_property_map);
+
+  auto normalized_sdf_values = std::vector<double>();
+  face_iterator facet_it, fend;
+  for(boost::tie(facet_it,fend) = CGAL::faces(mesh);
+      facet_it != fend; ++facet_it) {
+    double log_normalized = log(boost::get( sdf_property_map,*facet_it) * 5.0 +
+                                1) / log(5.0 + 1);
+    normalized_sdf_values.push_back(log_normalized);
+      }
+    return normalized_sdf_values;
+  // C.resize(seg_ids.size(), 1);
+
+
 }
 
   void log_normalize_probability_matrix(std::vector<std::vector<double> >&
@@ -185,5 +236,9 @@ PYBIND11_MODULE(pygraphcut, m) {
         Eigen::MatrixXd C;
         sdf_segmentation(V,F,C);
         return C.cast<int>();
+    });
+    m.def("sdf_values", [](const Eigen::MatrixXd&V, const Eigen::MatrixXi&F){
+        Eigen::MatrixXd C;
+        return sdf_computation(V,F);
     });
 }
